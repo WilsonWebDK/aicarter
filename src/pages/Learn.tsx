@@ -263,7 +263,7 @@ export default function Learn() {
                     let optionClass = "glass-card rounded-2xl p-4 text-left transition-all w-full";
                     if (quizState === "feedback") {
                       if (idx === q.correct_index) {
-                        optionClass += " ring-2 ring-green-500 bg-green-500/10";
+                        optionClass += " ring-2 ring-success bg-success/10";
                       } else if (idx === selectedAnswer && idx !== q.correct_index) {
                         optionClass += " ring-2 ring-destructive bg-destructive/10";
                       } else {
