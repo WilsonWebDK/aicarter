@@ -220,7 +220,7 @@ export default function TopicDetail() {
 
   const statusBadge = (status: string) => {
     switch (status) {
-      case "completed": return <Check className="h-4 w-4 text-green-500" />;
+      case "completed": return <Check className="h-4 w-4 text-success" />;
       case "failed": return <X className="h-4 w-4 text-destructive" />;
       default: return null; // handled by progress bar
     }
