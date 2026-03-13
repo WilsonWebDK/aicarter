@@ -92,6 +92,9 @@
 
     --glass-bg: 220 20% 10% / 0.7;
     --glass-border: 220 20% 20% / 0.3;
+
+    --success: 142 76% 46%;
+    --success-foreground: 0 0% 100%;
   }
 }
 
