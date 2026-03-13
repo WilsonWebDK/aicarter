@@ -47,6 +47,9 @@
 
     --glass-bg: 0 0% 100% / 0.7;
     --glass-border: 0 0% 100% / 0.2;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
   }
 
   .dark {
