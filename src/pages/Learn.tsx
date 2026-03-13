@@ -342,7 +342,7 @@ export default function Learn() {
                   {questions.map((q, i) => (
                     <div key={i} className="glass-card flex items-start gap-3 rounded-2xl p-3">
                       {answers[i] === q.correct_index ? (
-                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                       ) : (
                         <X className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                       )}
