@@ -4,13 +4,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { Plus, FileText, Youtube, Globe, BookOpen } from "lucide-react";
+import { Plus, BookOpen } from "lucide-react";
 
 type Topic = {
   id: string;
   title: string;
   description: string | null;
-  mastery_percentage: number;
   created_at: string;
 };
 
@@ -24,7 +23,7 @@ export default function KnowledgeBank() {
     if (!user) return;
     supabase
       .from("topics")
-      .select("*")
+      .select("id, title, description, created_at")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
       .then(({ data }) => {
@@ -77,7 +76,9 @@ export default function KnowledgeBank() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold truncate">{topic.title}</h3>
-                  <p className="text-xs text-muted-foreground">{topic.mastery_percentage}% mastery</p>
+                  {topic.description && (
+                    <p className="text-xs text-muted-foreground line-clamp-1">{topic.description}</p>
+                  )}
                 </div>
               </motion.button>
             ))}

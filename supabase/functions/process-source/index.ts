@@ -12,7 +12,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -47,7 +46,6 @@ Deno.serve(async (req) => {
     }
     const userId = claimsData.claims.sub;
 
-    // Service role client for DB writes
     const admin = createClient(supabaseUrl, serviceRoleKey);
 
     const { source_id, topic_id } = await req.json();
@@ -84,18 +82,37 @@ Deno.serve(async (req) => {
 
     try {
       if (source.type === "pdf" && source.file_path) {
-        // Download PDF from storage
-        const { data: fileData, error: dlErr } = await admin.storage
+        // Generate a signed URL so Firecrawl can access the PDF
+        const { data: signedData, error: signedErr } = await admin.storage
           .from("source-files")
-          .download(source.file_path);
+          .createSignedUrl(source.file_path, 3600);
 
-        if (dlErr || !fileData) {
-          throw new Error("Failed to download PDF: " + (dlErr?.message || "unknown"));
+        if (signedErr || !signedData?.signedUrl) {
+          throw new Error("Failed to create signed URL: " + (signedErr?.message || "unknown"));
         }
 
-        // Extract text from PDF — send as base64 to a simple text extraction
-        const text = await fileData.text();
-        content = text.substring(0, 50000); // Limit content size
+        // Pass signed URL to Firecrawl for PDF extraction
+        const scrapeRes = await fetch("https://api.firecrawl.dev/v1/scrape", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${firecrawlKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            url: signedData.signedUrl,
+            formats: ["markdown"],
+          }),
+        });
+
+        const scrapeData = await scrapeRes.json();
+
+        if (!scrapeRes.ok) {
+          throw new Error(
+            `Firecrawl PDF error [${scrapeRes.status}]: ${JSON.stringify(scrapeData)}`
+          );
+        }
+
+        content = scrapeData.data?.markdown || scrapeData.markdown || "";
       } else if (source.url) {
         // Scrape URL (works for both regular URLs and YouTube)
         const scrapeRes = await fetch("https://api.firecrawl.dev/v1/scrape", {
@@ -121,7 +138,7 @@ Deno.serve(async (req) => {
 
         content = scrapeData.data?.markdown || scrapeData.markdown || "";
 
-        // For YouTube, try to extract timestamps from the markdown
+        // For YouTube, try to extract timestamps
         if (source.type === "youtube") {
           const highlights = extractTimestamps(content);
           if (highlights.length > 0) {
@@ -176,7 +193,6 @@ Deno.serve(async (req) => {
 
 function extractTimestamps(markdown: string): Array<{ time: number; label: string }> {
   const highlights: Array<{ time: number; label: string }> = [];
-  // Match patterns like "0:00", "1:23", "01:23:45", "(1:23)", "[1:23]"
   const regex = /(?:^|\s|\(|\[)(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*[-–—]\s*|\s*\)?\s*|\s*\]?\s*)(.{1,80})/gm;
   let match;
 
