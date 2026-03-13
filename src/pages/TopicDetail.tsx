@@ -1,19 +1,16 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import {
   ArrowLeft, Plus, FileText, Youtube, Globe, Upload, Loader2, Check, X,
-  Headphones, Mic, Clock, Sparkles,
+  Headphones, Mic, GraduationCap, Sparkles,
 } from "lucide-react";
-
-type Highlight = { time: number; label: string };
 
 type Source = {
   id: string;
@@ -22,21 +19,22 @@ type Source = {
   url: string | null;
   processing_status: string;
   created_at: string;
-  metadata: { highlights?: Highlight[] } | null;
+  metadata: Record<string, unknown> | null;
 };
 
 type Topic = {
   id: string;
   title: string;
   description: string | null;
-  mastery_percentage: number;
 };
 
-type Takeaway = {
-  id: string;
-  title: string | null;
-  content: { explanation: string; importance: string };
-};
+const PROCESSING_MESSAGES = [
+  "Crunching data...",
+  "Extracting numbers...",
+  "Understanding content...",
+  "Analyzing structures...",
+  "Preparing your quiz...",
+];
 
 export default function TopicDetail() {
   const { id } = useParams<{ id: string }>();
@@ -47,40 +45,45 @@ export default function TopicDetail() {
 
   const [topic, setTopic] = useState<Topic | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
-  const [takeaways, setTakeaways] = useState<Takeaway[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddSource, setShowAddSource] = useState(false);
   const [sourceType, setSourceType] = useState<"youtube" | "url" | "pdf">("url");
   const [sourceUrl, setSourceUrl] = useState("");
   const [adding, setAdding] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [ytPlayerUrl, setYtPlayerUrl] = useState<string | null>(null);
+  const [processingMsgIdx, setProcessingMsgIdx] = useState(0);
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  const fetchTakeaways = useCallback(async () => {
-    if (!id || !user) return;
-    const { data } = await supabase
-      .from("generated_content")
-      .select("id, title, content")
-      .eq("topic_id", id)
-      .eq("user_id", user.id)
-      .eq("type", "takeaway");
-    if (data) setTakeaways(data as Takeaway[]);
-  }, [id, user]);
+  // Rotate processing message
+  const hasProcessing = sources.some((s) => s.processing_status === "processing" || s.processing_status === "pending");
+
+  useEffect(() => {
+    if (!hasProcessing) return;
+    const interval = setInterval(() => {
+      setProcessingMsgIdx((prev) => (prev + 1) % PROCESSING_MESSAGES.length);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [hasProcessing]);
+
+  // Check if all sources completed (for success card)
+  useEffect(() => {
+    if (sources.length > 0 && !hasProcessing && sources.every((s) => s.processing_status === "completed")) {
+      // Only show after initial load
+      if (!loading) setShowSuccess(true);
+    }
+  }, [sources, hasProcessing, loading]);
 
   useEffect(() => {
     if (!id || !user) return;
 
     Promise.all([
-      supabase.from("topics").select("*").eq("id", id).eq("user_id", user.id).single(),
+      supabase.from("topics").select("id, title, description").eq("id", id).eq("user_id", user.id).single(),
       supabase.from("sources").select("*").eq("topic_id", id).order("created_at", { ascending: false }),
     ]).then(([topicRes, sourcesRes]) => {
       if (topicRes.data) setTopic(topicRes.data);
       if (sourcesRes.data) setSources(sourcesRes.data as Source[]);
       setLoading(false);
     });
-
-    fetchTakeaways();
-  }, [id, user, fetchTakeaways]);
+  }, [id, user]);
 
   // Realtime subscription for source status updates
   useEffect(() => {
@@ -118,31 +121,16 @@ export default function TopicDetail() {
     return data?.success === true;
   };
 
-  const analyzeTopic = async () => {
-    setAnalyzing(true);
-    const { data, error } = await supabase.functions.invoke("analyze-topic", {
+  const triggerAnalysis = async () => {
+    await supabase.functions.invoke("analyze-topic", {
       body: { topic_id: id },
     });
-
-    setAnalyzing(false);
-    if (error) {
-      toast({ title: "Analysis failed", description: error.message, variant: "destructive" });
-      return;
-    }
-
-    if (data?.success) {
-      toast({ title: "Analysis complete", description: `${data.takeaways_count} takeaways generated` });
-      // Refresh topic mastery and takeaways
-      if (data.mastery_percentage !== undefined && topic) {
-        setTopic({ ...topic, mastery_percentage: data.mastery_percentage });
-      }
-      fetchTakeaways();
-    }
   };
 
   const addUrlSource = async () => {
     if (!user || !id || !sourceUrl.trim()) return;
     setAdding(true);
+    setShowSuccess(false);
 
     const isYoutube = sourceUrl.includes("youtube.com") || sourceUrl.includes("youtu.be");
     const type = isYoutube ? "youtube" : "url";
@@ -172,11 +160,8 @@ export default function TopicDetail() {
       setShowAddSource(false);
       toast({ title: "Source added", description: "Processing started..." });
 
-      // Trigger processing
       const success = await processSource(data.id);
-      if (success) {
-        analyzeTopic();
-      }
+      if (success) triggerAnalysis();
     }
     setAdding(false);
   };
@@ -186,6 +171,7 @@ export default function TopicDetail() {
     if (!file || !user || !id) return;
 
     setAdding(true);
+    setShowSuccess(false);
     const filePath = `${user.id}/${id}/${Date.now()}-${file.name}`;
     const { error: uploadError } = await supabase.storage.from("source-files").upload(filePath, file);
 
@@ -219,9 +205,7 @@ export default function TopicDetail() {
       toast({ title: "File uploaded", description: "Processing started..." });
 
       const success = await processSource(data.id);
-      if (success) {
-        analyzeTopic();
-      }
+      if (success) triggerAnalysis();
     }
     setAdding(false);
   };
@@ -234,33 +218,12 @@ export default function TopicDetail() {
     }
   };
 
-  const statusIcon = (status: string) => {
+  const statusBadge = (status: string) => {
     switch (status) {
-      case "completed": return <Check className="h-4 w-4 text-primary" />;
-      case "processing": return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
+      case "completed": return <Check className="h-4 w-4 text-green-500" />;
       case "failed": return <X className="h-4 w-4 text-destructive" />;
-      default: return <Loader2 className="h-4 w-4 text-muted-foreground" />;
+      default: return null; // handled by progress bar
     }
-  };
-
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  };
-
-  const getYoutubeEmbedUrl = (url: string, startSeconds?: number) => {
-    let videoId = "";
-    try {
-      const u = new URL(url);
-      if (u.hostname.includes("youtu.be")) {
-        videoId = u.pathname.slice(1);
-      } else {
-        videoId = u.searchParams.get("v") || "";
-      }
-    } catch { return null; }
-    if (!videoId) return null;
-    return `https://www.youtube.com/embed/${videoId}${startSeconds ? `?start=${startSeconds}&autoplay=1` : ""}`;
   };
 
   if (loading) {
@@ -280,10 +243,6 @@ export default function TopicDetail() {
     );
   }
 
-  const ytSources = sources.filter(
-    (s) => s.type === "youtube" && (s.metadata as any)?.highlights?.length > 0
-  );
-
   return (
     <div className="px-4 py-6 md:px-8">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl">
@@ -295,11 +254,47 @@ export default function TopicDetail() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight">{topic.title}</h1>
           {topic.description && <p className="mt-1 text-muted-foreground">{topic.description}</p>}
-          <div className="mt-3 flex items-center gap-3">
-            <Progress value={topic.mastery_percentage} className="h-2 flex-1 rounded-full" />
-            <span className="text-sm font-medium text-primary">{topic.mastery_percentage}%</span>
-          </div>
         </div>
+
+        {/* Processing bar */}
+        {hasProcessing && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 glass-card rounded-3xl p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <motion.span
+                key={processingMsgIdx}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-sm font-medium"
+              >
+                {PROCESSING_MESSAGES[processingMsgIdx]}
+              </motion.span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+              <motion.div
+                className="h-full rounded-full bg-primary"
+                initial={{ width: "10%" }}
+                animate={{ width: "85%" }}
+                transition={{ duration: 15, ease: "easeOut" }}
+              />
+            </div>
+          </motion.div>
+        )}
+
+        {/* Success card */}
+        {showSuccess && !hasProcessing && sources.length > 0 && (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mb-6 glass-card rounded-3xl p-6 text-center">
+            <Sparkles className="mx-auto mb-3 h-8 w-8 text-primary" />
+            <h3 className="text-lg font-bold mb-1">Sources received!</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              AI is now building your Learn universe for <strong>{topic.title}</strong>.
+              You are ready to master this content.
+            </p>
+            <Button className="rounded-2xl" onClick={() => navigate(`/learn?topic=${id}`)}>
+              <GraduationCap className="mr-2 h-4 w-4" /> Start Learning
+            </Button>
+          </motion.div>
+        )}
 
         {/* Add source */}
         <div className="mb-6">
@@ -363,90 +358,32 @@ export default function TopicDetail() {
           </div>
         ) : (
           <div className="space-y-2 mb-6">
-            {sources.map((source) => (
-              <div key={source.id} className="glass-card flex items-center gap-3 rounded-2xl p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                  {sourceIcon(source.type)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{source.title || source.url || "Untitled"}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{source.type} • {source.processing_status}</p>
-                </div>
-                {statusIcon(source.processing_status)}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* YouTube Highlights */}
-        {ytSources.length > 0 && (
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold mb-3">🎬 Key Moments</h2>
-
-            {ytPlayerUrl && (
-              <div className="mb-4 aspect-video overflow-hidden rounded-2xl">
-                <iframe
-                  src={ytPlayerUrl}
-                  className="h-full w-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
-            )}
-
-            <div className="space-y-2">
-              {ytSources.map((source) =>
-                ((source.metadata as any)?.highlights as Highlight[])?.map((h, idx) => (
-                  <button
-                    key={`${source.id}-${idx}`}
-                    onClick={() => {
-                      const embedUrl = source.url ? getYoutubeEmbedUrl(source.url, h.time) : null;
-                      if (embedUrl) setYtPlayerUrl(embedUrl);
-                    }}
-                    className="glass-card flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-shadow hover:shadow-md"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                      <Clock className="h-4 w-4 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{h.label}</p>
-                    </div>
-                    <span className="text-xs font-mono text-muted-foreground">{formatTime(h.time)}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Key Takeaways */}
-        {takeaways.length > 0 && (
-          <div className="mb-6">
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold">Key Takeaways</h2>
-            </div>
-            <div className="space-y-2">
-              {takeaways.map((t) => (
-                <div key={t.id} className="glass-card rounded-2xl p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-sm font-semibold">{t.title}</h3>
-                    <Badge variant={t.content.importance === "high" ? "default" : "secondary"} className="shrink-0 text-[10px]">
-                      {t.content.importance}
-                    </Badge>
+            {sources.map((source) => {
+              const isProcessing = source.processing_status === "processing" || source.processing_status === "pending";
+              return (
+                <div key={source.id} className="glass-card flex items-center gap-3 rounded-2xl p-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                    {sourceIcon(source.type)}
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{t.content.explanation}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{source.title || source.url || "Untitled"}</p>
+                    {isProcessing ? (
+                      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                        <motion.div
+                          className="h-full rounded-full bg-primary"
+                          initial={{ width: "5%" }}
+                          animate={{ width: "75%" }}
+                          transition={{ duration: 12, ease: "easeOut" }}
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground capitalize">{source.type} • {source.processing_status}</p>
+                    )}
+                  </div>
+                  {!isProcessing && statusBadge(source.processing_status)}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Analyzing indicator */}
-        {analyzing && (
-          <div className="mb-6 flex items-center gap-2 rounded-2xl bg-primary/5 p-4">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <p className="text-sm font-medium">Analyzing content with AI...</p>
+              );
+            })}
           </div>
         )}
 
