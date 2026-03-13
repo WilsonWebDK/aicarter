@@ -4,8 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
-import { Plus, Flame, BookOpen, Trophy } from "lucide-react";
+import { Plus, Flame, BookOpen, Trophy, Headphones, Mic } from "lucide-react";
 
 type Topic = {
   id: string;
@@ -31,29 +32,22 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user) return;
 
-    // Check onboarding
     supabase
       .from("user_preferences")
       .select("onboarding_completed")
       .eq("user_id", user.id)
       .single()
       .then(({ data }) => {
-        if (data && !data.onboarding_completed) {
-          navigate("/onboarding");
-        }
+        if (data && !data.onboarding_completed) navigate("/onboarding");
       });
 
-    // Fetch profile
     supabase
       .from("profiles")
       .select("display_name, is_premium")
       .eq("user_id", user.id)
       .single()
-      .then(({ data }) => {
-        if (data) setProfile(data);
-      });
+      .then(({ data }) => { if (data) setProfile(data); });
 
-    // Fetch topics
     supabase
       .from("topics")
       .select("*")
@@ -105,11 +99,7 @@ export default function Dashboard() {
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Your Topics</h2>
           {canCreateTopic && (
-            <Button
-              size="sm"
-              className="rounded-2xl"
-              onClick={() => navigate("/knowledge/new")}
-            >
+            <Button size="sm" className="rounded-2xl" onClick={() => navigate("/knowledge/new")}>
               <Plus className="mr-1 h-4 w-4" /> New Topic
             </Button>
           )}
@@ -160,6 +150,35 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground">Contact your admin to upgrade</p>
           </div>
         )}
+
+        {/* Coming Soon — Phase 2 Features */}
+        <div className="mt-8 space-y-3">
+          <h2 className="text-lg font-semibold text-muted-foreground">Coming Soon</h2>
+          <div className="glass-card relative rounded-3xl p-5 opacity-60">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                <Headphones className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold">AI Podcast</h3>
+                <p className="text-xs text-muted-foreground">Auto-generated audio summaries of your topics</p>
+              </div>
+              <Badge variant="secondary">Phase 2</Badge>
+            </div>
+          </div>
+          <div className="glass-card relative rounded-3xl p-5 opacity-60">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                <Mic className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold">Voice Agent</h3>
+                <p className="text-xs text-muted-foreground">Have a voice conversation with your content</p>
+              </div>
+              <Badge variant="secondary">Phase 2</Badge>
+            </div>
+          </div>
+        </div>
       </motion.div>
     </div>
   );
