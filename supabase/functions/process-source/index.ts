@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
         // Generate a signed URL so Firecrawl can access the PDF
         const { data: signedData, error: signedErr } = await admin.storage
           .from("source-files")
-          .createSignedUrl(source.file_path, 3600);
+          .createSignedUrl(source.file_path, 300);
 
         if (signedErr || !signedData?.signedUrl) {
           throw new Error("Failed to create signed URL: " + (signedErr?.message || "unknown"));
